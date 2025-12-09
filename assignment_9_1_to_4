@@ -1,0 +1,46 @@
+import numpy as np
+from io import BytesIO
+from urllib import request
+from PIL import Image
+import onnxruntime as ort
+
+MODEL_PATH = "hair_classifier_v1.onnx"  # download alongside .onnx.data
+IMG_URL = "https://habrastorage.org/webt/yf/_d/ok/yf_dokzqy3vcritme8ggnzqlvwa.jpeg"
+IMG_SIZE = (200, 200)
+MEAN = np.array([0.485, 0.456, 0.406], dtype="float32")
+STD = np.array([0.229, 0.224, 0.225], dtype="float32")
+
+def download_image(url: str) -> Image.Image:
+    with request.urlopen(url) as resp:
+        buf = resp.read()
+    return Image.open(BytesIO(buf))
+
+def prepare_image(img: Image.Image) -> Image.Image:
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    img = img.resize(IMG_SIZE, Image.NEAREST)
+    return img
+
+def preprocess(img: Image.Image) -> np.ndarray:
+    arr = np.asarray(img).astype("float32") / 255.0
+    arr = (arr - MEAN) / STD
+    arr = np.transpose(arr, (2, 0, 1))
+    return np.expand_dims(arr, 0)
+
+def main():
+    img = download_image(IMG_URL)
+    img = prepare_image(img)
+    arr = preprocess(img)
+
+    print("First pixel R channel (post-normalization):", float(arr[0, 0, 0, 0]))
+
+    sess = ort.InferenceSession(MODEL_PATH, providers=["CPUExecutionProvider"])
+    input_name = sess.get_inputs()[0].name
+    output_name = sess.get_outputs()[0].name
+    print("Output node name:", output_name)
+
+    pred = sess.run([output_name], {input_name: arr})[0]
+    print("Raw model output:", float(pred.squeeze()))
+
+if __name__ == "__main__":
+    main()
